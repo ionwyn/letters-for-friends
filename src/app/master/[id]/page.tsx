@@ -11,6 +11,7 @@ type Message = {
   id: string;
   title: string;
   code: string;
+  nfcToken: string | null;
   content: RichNode;
   status: "draft" | "active" | "revoked";
   expiresAt: string | null;
@@ -40,6 +41,11 @@ export default function EditMessage({
   const [preview, setPreview] = useState(false);
   const [permanent, setPermanent] = useState(false);
   const [date, setDate] = useState("");
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/messages/${id}`, { cache: "no-store" })
@@ -129,6 +135,69 @@ export default function EditMessage({
       setError("Could not remove access. Please try again.");
     }
     setBusy(false);
+  }
+
+  async function rotateNfcAccess() {
+    if (!message) return;
+    if (
+      message.nfcToken &&
+      !window.confirm(
+        "Replace the current NFC link? The old link and existing reader sessions will stop working.",
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/messages/${id}/nfc`, {
+        method: "POST",
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Could not create NFC access");
+      setMessage({ ...message, nfcToken: result.token });
+      setNotice(
+        message.nfcToken
+          ? "NFC link replaced. The previous link no longer works."
+          : "Passwordless NFC access is ready.",
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not create NFC access",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeNfcAccess() {
+    if (
+      !message?.nfcToken ||
+      !window.confirm(
+        "Revoke passwordless NFC access? The link and existing reader sessions will stop working. The passcode will still work.",
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/messages/${id}/nfc`, {
+        method: "DELETE",
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Could not revoke NFC access");
+      setMessage({ ...message, nfcToken: null });
+      setNotice("NFC access revoked. The recipient passcode still works.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not revoke NFC access",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (loading)
@@ -284,6 +353,76 @@ export default function EditMessage({
               <div className="fine-print">
                 Changing the passcode signs out existing readers.
               </div>
+            </div>
+            <div className="side-panel">
+              <div className="field-label">PASSWORDLESS NFC</div>
+              <p>
+                Write this private URL to the NFC tag. A tap opens the letter
+                without asking for the passcode.
+              </p>
+              {message.nfcToken ? (
+                <>
+                  <div className="code-row nfc-url-row">
+                    <input
+                      aria-label="NFC access URL"
+                      value={`${origin}/access/${message.nfcToken}`}
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      title="Copy NFC URL"
+                      onClick={() =>
+                        void navigator.clipboard.writeText(
+                          `${window.location.origin}/access/${message.nfcToken}`,
+                        )
+                      }
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  {!readonly && (
+                    <div className="nfc-actions">
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => void rotateNfcAccess()}
+                      >
+                        Rotate link
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button danger-link"
+                        disabled={busy}
+                        onClick={() => void revokeNfcAccess()}
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  )}
+                  <div className="fine-print">
+                    {readonly
+                      ? "This link is inactive because recipient access was removed."
+                      : "Anyone with this URL can open the letter. Rotating it invalidates the previous URL."}
+                  </div>
+                </>
+              ) : readonly ? (
+                <div className="fine-print">No NFC link was retained.</div>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-button nfc-create-button"
+                  disabled={busy}
+                  onClick={() => void rotateNfcAccess()}
+                >
+                  Create NFC link
+                </button>
+              )}
+              {!readonly && message.status === "draft" && (
+                <div className="fine-print">
+                  The link becomes usable after this letter is published.
+                </div>
+              )}
             </div>
             <div className="side-panel">
               <label className="field-label" htmlFor="expiry">

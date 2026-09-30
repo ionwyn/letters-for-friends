@@ -5,7 +5,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import { MediaExtension } from "./MediaExtension";
 import type { RichNode } from "@/lib/content";
 
@@ -73,7 +73,7 @@ export function RichEditor({
         file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) ||
         "attachment";
       const id = crypto.randomUUID();
-      const blob = await upload(
+      const blob = await uploadPresigned(
         `messages/${messageId}/${id}/${safeName}`,
         file,
         {

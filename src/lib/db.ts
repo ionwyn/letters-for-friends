@@ -9,6 +9,7 @@ export function db() {
 export type MessageRow = {
   id: string;
   code_hash: string;
+  nfc_token_hash: string | null;
   encrypted_payload: string;
   status: "draft" | "active" | "revoked";
   expires_at: string | null;

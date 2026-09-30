@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { db, type MessageRow } from "./db";
 import { decryptJson, encryptJson, keyedHash } from "./crypto";
 import {
@@ -25,6 +25,18 @@ export function normalizeCode(code: string) {
 
 export function codeHash(code: string) {
   return keyedHash(`code:${normalizeCode(code)}`);
+}
+
+export function newNfcToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+export function validNfcToken(token: string) {
+  return /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
+export function nfcTokenHash(token: string) {
+  return keyedHash(`nfc:${token}`);
 }
 
 export function defaultExpiry() {
@@ -66,6 +78,14 @@ export async function getMessage(id: string): Promise<MessageRow | null> {
   if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) return null;
   const rows = await db()`SELECT * FROM messages WHERE id = ${id}::uuid`;
   return (rows[0] as MessageRow | undefined) ?? null;
+}
+
+export async function getMessageByNfcToken(token: string): Promise<MessageRow | null> {
+  if (!validNfcToken(token)) return null;
+  const rows =
+    await db()`SELECT * FROM messages WHERE nfc_token_hash = ${nfcTokenHash(token)} LIMIT 1`;
+  const row = rows[0] as MessageRow | undefined;
+  return row && accessible(row) ? row : null;
 }
 
 export async function authorizedMessage(id: string) {
@@ -134,11 +154,42 @@ export async function saveMessage(
   const old = decode(row);
   const changedCode = normalizeCode(old.code) !== normalizeCode(code);
   const nextStatus = data.publish === true ? "active" : row.status;
-  const payload: Payload = { title, code, content };
+  const payload: Payload = {
+    title,
+    code,
+    content,
+    ...(old.nfcToken ? { nfcToken: old.nfcToken } : {}),
+  };
   const changed =
     await db()`UPDATE messages SET code_hash = ${codeHash(code)}, encrypted_payload = ${encryptJson(payload, row.id)},
     expires_at = ${expiresAt}::timestamptz, status = ${nextStatus},
     access_version = access_version + ${changedCode ? 1 : 0}, updated_at = now()
+    WHERE id = ${row.id}::uuid AND status != 'revoked' RETURNING id`;
+  if (!changed.length) throw new Error("This letter has already been removed");
+}
+
+export async function rotateNfcToken(row: MessageRow) {
+  if (row.status === "revoked") throw new Error("Removed messages are read only");
+  const token = newNfcToken();
+  const payload = { ...decode(row), nfcToken: token };
+  const changed = await db()`UPDATE messages SET
+    nfc_token_hash = ${nfcTokenHash(token)},
+    encrypted_payload = ${encryptJson(payload, row.id)},
+    access_version = access_version + 1,
+    updated_at = now()
+    WHERE id = ${row.id}::uuid AND status != 'revoked' RETURNING id`;
+  if (!changed.length) throw new Error("This letter has already been removed");
+  return token;
+}
+
+export async function revokeNfcToken(row: MessageRow) {
+  if (row.status === "revoked") throw new Error("Removed messages are read only");
+  const { nfcToken: _removed, ...payload } = decode(row);
+  const changed = await db()`UPDATE messages SET
+    nfc_token_hash = NULL,
+    encrypted_payload = ${encryptJson(payload, row.id)},
+    access_version = access_version + 1,
+    updated_at = now()
     WHERE id = ${row.id}::uuid AND status != 'revoked' RETURNING id`;
   if (!changed.length) throw new Error("This letter has already been removed");
 }

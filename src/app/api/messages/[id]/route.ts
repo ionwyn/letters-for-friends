@@ -20,7 +20,9 @@ export async function GET(_request: Request, context: Context) {
       id: row.id,
       title: payload.title,
       content: payload.content,
-      ...(master ? { code: payload.code } : {}),
+      ...(master
+        ? { code: payload.code, nfcToken: payload.nfcToken ?? null }
+        : {}),
       status: row.status,
       expiresAt: row.expires_at,
       createdAt: row.created_at,

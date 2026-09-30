@@ -6,7 +6,12 @@ export type RichNode = {
   content?: RichNode[];
 };
 
-export type Payload = { title: string; code: string; content: RichNode };
+export type Payload = {
+  title: string;
+  code: string;
+  content: RichNode;
+  nfcToken?: string;
+};
 
 const BLOCKS = new Set([
   "doc",

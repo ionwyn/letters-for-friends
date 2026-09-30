@@ -11,6 +11,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("access") === "unavailable") {
+      setError("This NFC link is unavailable. Enter your passcode instead.");
+      window.history.replaceState({}, "", "/");
+    }
     fetch("/api/session", { cache: "no-store" })
       .then((response) => response.json())
       .then((data) => {

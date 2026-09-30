@@ -7,6 +7,11 @@ import {
   validSignature,
 } from "../src/lib/crypto";
 import { cleanDocument, usedAssets } from "../src/lib/content";
+import {
+  newNfcToken,
+  nfcTokenHash,
+  validNfcToken,
+} from "../src/lib/messages";
 
 process.env.AUTH_SECRET = "test-auth-secret-that-is-at-least-32-chars-long";
 process.env.ENCRYPTION_KEY = "a".repeat(64);
@@ -24,6 +29,14 @@ test("session signatures reject altered payloads", () => {
   const signature = keyedHash("session");
   assert.equal(validSignature("session", signature), true);
   assert.equal(validSignature("changed", signature), false);
+});
+
+test("NFC access uses a high entropy token and stores only its keyed hash", () => {
+  const token = newNfcToken();
+  assert.equal(validNfcToken(token), true);
+  assert.equal(token.length, 43);
+  assert.notEqual(nfcTokenHash(token), token);
+  assert.equal(validNfcToken(`${token}x`), false);
 });
 
 test("content rejects unsafe links and external media", () => {

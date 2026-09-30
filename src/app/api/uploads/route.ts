@@ -1,4 +1,8 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { issueSignedToken } from "@vercel/blob";
+import {
+  handleUploadPresigned,
+  type HandleUploadPresignedBody,
+} from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { isMaster, sameOrigin } from "@/lib/auth";
 import { getMessage } from "@/lib/messages";
@@ -9,13 +13,13 @@ const pathPattern = /^messages\/([0-9a-f-]{36})\/([0-9a-f-]{36})\/([^/]+)$/i;
 export async function POST(request: Request) {
   const body = (await request
     .json()
-    .catch(() => null)) as HandleUploadBody | null;
+    .catch(() => null)) as HandleUploadPresignedBody | null;
   if (!body) return jsonError("Invalid upload");
   try {
-    const result = await handleUpload({
+    const result = await handleUploadPresigned({
       request,
       body,
-      onBeforeGenerateToken: async (pathname) => {
+      getSignedToken: async (pathname) => {
         if (!sameOrigin(request) || !(await isMaster()))
           throw new Error("Master access required");
         const match = pathPattern.exec(pathname);
@@ -24,23 +28,36 @@ export async function POST(request: Request) {
         const message = await getMessage(match[1]);
         if (!message || message.status === "revoked")
           throw new Error("Message unavailable");
+        const allowedContentTypes = [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "image/gif",
+          "video/mp4",
+          "video/webm",
+          "audio/mpeg",
+          "audio/mp4",
+          "audio/wav",
+          "application/pdf",
+          "text/plain",
+        ];
+        const maximumSizeInBytes = 100 * 1024 * 1024;
+        const validUntil = Date.now() + 10 * 60 * 1000;
+        const token = await issueSignedToken({
+          pathname,
+          operations: ["put"],
+          allowedContentTypes,
+          maximumSizeInBytes,
+          validUntil,
+        });
         return {
-          allowedContentTypes: [
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/gif",
-            "video/mp4",
-            "video/webm",
-            "audio/mpeg",
-            "audio/mp4",
-            "audio/wav",
-            "application/pdf",
-            "text/plain",
-          ],
-          maximumSizeInBytes: 100 * 1024 * 1024,
-          validUntil: Date.now() + 10 * 60 * 1000,
-          addRandomSuffix: false,
+          token,
+          urlOptions: {
+            allowedContentTypes,
+            maximumSizeInBytes,
+            validUntil,
+            addRandomSuffix: false,
+          },
         };
       },
       onUploadCompleted: async () => {

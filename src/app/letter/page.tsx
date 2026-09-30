@@ -61,6 +61,26 @@ export default function LetterPage() {
     }
   }
 
+  async function keepPermanently() {
+    if (
+      !letter ||
+      !window.confirm(
+        "Keep this letter permanently? This removes the expiration for everyone who can access it.",
+      )
+    )
+      return;
+    setBusy(true);
+    const response = await fetch(`/api/messages/${letter.id}/keep`, {
+      method: "POST",
+    });
+    if (response.ok) {
+      setLetter({ ...letter, expiresAt: null });
+    } else {
+      window.alert("Could not keep the letter. Please try again.");
+    }
+    setBusy(false);
+  }
+
   async function leave() {
     await fetch("/api/logout", { method: "POST" });
     router.push("/");
@@ -92,11 +112,22 @@ export default function LetterPage() {
                 <RichViewer content={letter.content} />
               </article>
               <div className="letter-actions">
-                <span>
-                  {letter.expiresAt
-                    ? `Available until ${new Date(letter.expiresAt).toLocaleDateString(undefined, { dateStyle: "long" })}`
-                    : "Here to keep"}
-                </span>
+                <div className="letter-expiry">
+                  <span>
+                    {letter.expiresAt
+                      ? `Available until ${new Date(letter.expiresAt).toLocaleDateString(undefined, { dateStyle: "long" })}`
+                      : "Here to keep"}
+                  </span>
+                  {letter.expiresAt && (
+                    <button
+                      className="text-button keep-link"
+                      onClick={keepPermanently}
+                      disabled={busy}
+                    >
+                      Keep permanently for me
+                    </button>
+                  )}
+                </div>
                 <div>
                   <button className="text-button" onClick={leave}>
                     Close letter
